@@ -170,6 +170,47 @@ The architecture enforces strict boundaries:
 
 This allows replacing strategy logic without touching execution reliability logic, and vice versa.
 
+
+---
+
+## Strategy Engine Implementation (Section 6)
+
+### Modular Design
+
+- The strategy engine is fully pluggable: each strategy is a module implementing the `StrategyEngine` interface.
+- Strategies are registered in a central registry for easy swapping and extension.
+- All types are defined in `src/strategy/types.ts` for clarity and extensibility.
+
+### Default Strategy: "Momentum + Yield"
+
+- If USDC yield > threshold, bridge to highest APY chain.
+- If WETH price up > threshold, rebalance to WETH.
+- If WETH price down > threshold, rebalance to USDC.
+- Otherwise, hold.
+
+#### Parameters (easy to change):
+- USDC yield threshold: 5% APY
+- WETH uptrend threshold: +3% 24h
+- WETH downtrend threshold: -3% 24h
+- Minimum trade size: $100 or 20% of portfolio
+
+#### Logic:
+- Candidates are generated for each signal (yield, momentum)
+- Each candidate is scored and given a rationale
+- The highest-scoring candidate is selected
+- All reasoning is logged for traceability
+
+#### Example Decision Plan:
+- Candidates: bridge, rebalance, hold
+- Selected: bridge to USDC on chain with highest APY
+- Reasoning: USDC yield > threshold, WETH momentum signals
+
+#### Extending:
+- To add new strategies, implement the `StrategyEngine` interface and add to the registry
+- All thresholds, scoring, and rationale logic are easy to change
+
+---
+
 ## 5) Opportunity Evaluation Framework
 
 Each candidate action is scored with a weighted model:

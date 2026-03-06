@@ -46,12 +46,12 @@
 
 ## 6. Implement the Strategy Engine
 
-- [ ] Create a function that evaluates current market conditions.
-- [ ] Implement strategy logic that converts market signals into actions.
-- [ ] Define decision thresholds such as minimum yield difference or price gap.
-- [ ] Implement position sizing logic that determines how much capital to allocate.
-- [ ] Add risk controls that prevent the agent from allocating too much capital in one trade.
-- [ ] Implement exit conditions such as stop loss or take profit rules.
+- [x] Create a function that evaluates current market conditions.
+- [x] Implement strategy logic that converts market signals into actions.
+- [x] Define decision thresholds such as minimum yield difference or price gap.
+- [x] Implement position sizing logic that determines how much capital to allocate.
+- [x] Add risk controls that prevent the agent from allocating too much capital in one trade.
+- [x] Implement exit conditions such as stop loss or take profit rules.
 
 ## 7. Implement Portfolio Management
 
@@ -60,7 +60,7 @@
 - [ ] Track realized and unrealized profit for each strategy.
 - [ ] Track the cost basis of each position.
 - [ ] Implement portfolio rebalancing logic if allocations drift too far from targets.
-- [ ] Persist portfolio state to a database or local file.
+- [ ] Persist portfolio state to a local file.
 
 ## 8. Implement the Agent Decision Loop
 
