@@ -17,7 +17,7 @@ import { createWalletClient, createPublicClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import { config } from 'dotenv';
-import { formatError, sleep } from './utils.js';
+import { formatError, sleep, scoreRoutes, executeWithFallback } from './utils.js';
 
 // Load environment variables
 config();
@@ -75,25 +75,34 @@ async function main() {
     });
 
     const responseData = routesResponse.data;
-    // Response is an object with a 'routes' array
     const routes = Array.isArray(responseData) ? responseData : responseData.routes || [];
     
     if (routes.length === 0) {
       throw new Error('No routes found for this transfer');
     }
-    
-    const selectedRoute = routes[0];
-    console.log(`✅ Found ${routes.length} routes, selected first route`);
+
+    // Step 1.5: Score & rank all routes
+    console.log(`\n📊 Step 1.5: Scoring ${routes.length} route(s)...`);
+    const scoredRoutes = scoreRoutes(routes);
+
+    for (const sr of scoredRoutes) {
+      const r = sr.route;
+      const steps = (r.steps ?? []).length;
+      console.log(
+        `   #${sr.index + 1}  score=${sr.score.toFixed(3)}  ` +
+        `output=${sr.outputAmount.toString()}  ` +
+        `gas=$${sr.gasCostUSD.toFixed(2)}  ` +
+        `fees=$${sr.feeCostUSD.toFixed(2)}  ` +
+        `steps=${steps}`
+      );
+    }
+
+    const selectedRoute = scoredRoutes[0].route;
+    console.log(`\n✅ Best route: #${scoredRoutes[0].index + 1} (score ${scoredRoutes[0].score.toFixed(3)})`);
     console.log(`   Route has ${selectedRoute.steps.length} step(s)\n`);
 
-    // Step 2: Get transaction data for the first step
-    console.log('📦 Step 2: Getting transaction data...');
-    const stepTxResponse = await apiClient.post('/advanced/stepTransaction', selectedRoute.steps[0]);
-    const stepWithTx = stepTxResponse.data;
-    console.log('✅ Transaction data received\n');
-
-    // Step 3: Set up wallet clients
-    console.log('🔐 Step 3: Setting up wallet...');
+    // Step 2: Set up wallet clients (moved before execution)
+    console.log('🔐 Step 2: Setting up wallet...');
     const account = privateKeyToAccount(privateKey as `0x${string}`);
     const address = await account.address;
     
@@ -117,8 +126,8 @@ async function main() {
 
     console.log(`✅ Wallet address: ${address}\n`);
 
-    // Step 3.5: Check balances
-    console.log('💰 Step 3.5: Checking balances...');
+    // Step 3: Check balances
+    console.log('💰 Step 3: Checking balances...');
     const balance = await publicClient.readContract({
       address: fromTokenAddress,
       abi: erc20Abi,
@@ -126,7 +135,7 @@ async function main() {
       args: [address],
     });
     
-    const balanceFormatted = Number(balance) / 1e6; // USDC has 6 decimals
+    const balanceFormatted = Number(balance) / 1e6;
     console.log(`   Current USDC balance: ${balanceFormatted} USDC`);
     
     if (BigInt(fromAmount) > balance) {
@@ -137,97 +146,106 @@ async function main() {
       process.exit(1);
     }
     
-    // Check ETH balance for gas
     const ethBalance = await publicClient.getBalance({ address });
     const ethBalanceFormatted = Number(ethBalance) / 1e18;
     console.log(`   Current ETH balance: ${ethBalanceFormatted} ETH`);
     
-    if (ethBalance < BigInt('1000000000000000')) { // 0.001 ETH
+    if (ethBalance < BigInt('1000000000000000')) {
       console.warn('   ⚠️  Warning: Low ETH balance for gas fees');
       console.warn('   Recommended: At least 0.001 ETH for gas\n');
     } else {
       console.log('   ✅ Sufficient balance for gas fees\n');
     }
 
-    // Step 4: Handle token approval if needed
-    const txRequest = stepWithTx.transactionRequest;
-
-    if (txRequest.to !== stepWithTx.action.fromToken.address) {
-      console.log('🔓 Step 4: Checking token approval...');
-      const erc20Abi = [
-        {
-          name: 'approve',
-          type: 'function',
-          stateMutability: 'nonpayable',
-          inputs: [
-            { name: 'spender', type: 'address' },
-            { name: 'amount', type: 'uint256' },
-          ],
-          outputs: [{ name: '', type: 'bool' }],
-        },
-        {
-          name: 'allowance',
-          type: 'function',
-          stateMutability: 'view',
-          inputs: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-          ],
-          outputs: [{ name: '', type: 'uint256' }],
-        },
-      ] as const;
-
-      const approvalAddress = stepWithTx.estimate.approvalAddress as `0x${string}`;
-      const tokenAddress = stepWithTx.action.fromToken.address as `0x${string}`;
-
-      const currentAllowance = await publicClient.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: 'allowance',
-        args: [account.address, approvalAddress],
-      });
-
-      if (currentAllowance < BigInt(stepWithTx.action.fromAmount)) {
-        console.log('   Approval needed. Approving token...');
-        const approveHash = await walletClient.writeContract({
-          address: tokenAddress,
-          abi: erc20Abi,
-          functionName: 'approve',
-          args: [approvalAddress, BigInt(stepWithTx.action.fromAmount)],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        console.log('✅ Token approved\n');
-      } else {
-        console.log('✅ Token already approved\n');
-      }
-    } else {
-      console.log('ℹ️  Step 4: No token approval needed\n');
-    }
-
-    // Step 5: Send transaction
-    console.log('📤 Step 5: Sending transaction...');
+    // Step 4: Handle approval + send transaction with route-fallback
+    console.log('📤 Step 4: Executing transaction (with automatic route fallback)...');
     console.log('   ⚠️  FINAL WARNING: This will execute a REAL transaction on mainnet!');
     console.log('   Press Ctrl+C within 5 seconds to cancel...\n');
-    
     await sleep(5000);
-    
-    console.log('   📤 Sending transaction...');
-    const txHash = await walletClient.sendTransaction({
-      to: txRequest.to as `0x${string}`,
-      value: txRequest.value ? BigInt(txRequest.value) : 0n,
-      data: txRequest.data as `0x${string}`,
-      gas: txRequest.gas ? BigInt(txRequest.gas) : undefined,
-      gasPrice: txRequest.gasPrice ? BigInt(txRequest.gasPrice) : undefined,
+
+    const approvalAbi = [
+      {
+        name: 'approve',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [
+          { name: 'spender', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+        ],
+        outputs: [{ name: '', type: 'bool' }],
+      },
+      {
+        name: 'allowance',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [
+          { name: 'owner', type: 'address' },
+          { name: 'spender', type: 'address' },
+        ],
+        outputs: [{ name: '', type: 'uint256' }],
+      },
+    ] as const;
+
+    const result = await executeWithFallback({
+      scoredRoutes,
+      maxRouteAttempts: Math.min(scoredRoutes.length, 3),
+      maxRetriesPerRoute: 2,
+      initialRetryDelay: 2000,
+
+      getStepTransaction: async (step) => {
+        const resp = await apiClient.post('/advanced/stepTransaction', step);
+        return resp.data;
+      },
+
+      sendTransaction: async (txRequest, stepData) => {
+        // Handle token approval if needed
+        if (txRequest.to !== stepData.action?.fromToken?.address) {
+          const approvalAddress = stepData.estimate?.approvalAddress as `0x${string}` | undefined;
+          const tokenAddress = stepData.action?.fromToken?.address as `0x${string}` | undefined;
+
+          if (approvalAddress && tokenAddress) {
+            const currentAllowance = await publicClient.readContract({
+              address: tokenAddress,
+              abi: approvalAbi,
+              functionName: 'allowance',
+              args: [account.address, approvalAddress],
+            });
+
+            if (currentAllowance < BigInt(stepData.action.fromAmount)) {
+              console.log('   🔓 Approving token...');
+              const approveHash = await walletClient.writeContract({
+                address: tokenAddress,
+                abi: approvalAbi,
+                functionName: 'approve',
+                args: [approvalAddress, BigInt(stepData.action.fromAmount)],
+              });
+              await publicClient.waitForTransactionReceipt({ hash: approveHash });
+              console.log('   ✅ Token approved');
+            }
+          }
+        }
+
+        // Send the actual transaction
+        const txHash = await walletClient.sendTransaction({
+          to: txRequest.to as `0x${string}`,
+          value: txRequest.value ? BigInt(txRequest.value) : 0n,
+          data: txRequest.data as `0x${string}`,
+          gas: txRequest.gas ? BigInt(txRequest.gas) : undefined,
+          gasPrice: txRequest.gasPrice ? BigInt(txRequest.gasPrice) : undefined,
+        });
+        return txHash;
+      },
+
+      waitForReceipt: async (txHash) => {
+        return publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+      },
     });
-    
-    console.log(`   ✅ Transaction sent!`);
-    console.log(`   📝 Transaction hash: ${txHash}`);
+
+    const txHash = result.txHash;
+    console.log(`\n   📝 Transaction hash: ${txHash}`);
+    console.log(`   📊 Used route #${result.routeUsed.index + 1} (score ${result.routeUsed.score.toFixed(3)})`);
+    console.log(`   ✅ Confirmed in block: ${result.receipt.blockNumber}`);
     console.log(`   🔗 Explorer: https://etherscan.io/tx/${txHash}\n`);
-    
-    console.log('⏳ Waiting for transaction confirmation...');
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-    console.log(`   ✅ Transaction confirmed in block: ${receipt.blockNumber}`);
-    console.log(`   🔗 Block explorer: https://etherscan.io/block/${receipt.blockNumber}\n`);
 
     // Step 6: Check transaction status
     console.log('🔍 Step 6: Checking cross-chain transaction status...');

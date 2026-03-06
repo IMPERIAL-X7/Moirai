@@ -20,20 +20,20 @@
 ## 3. Setup the Development Environment
 
 - [x] Initialize a Node.js or Python project for the agent backend.
-- [ ] Install required packages.
-- [ ] Create environment variables for RPC endpoints and API keys.
-- [ ] Configure RPC providers for all chains the agent will operate on.
-- [ ] Setup a wallet that will be used by the agent for signing transactions.
-- [ ] Create a basic script that successfully connects to a blockchain network.
+- [x] Install required packages.
+- [x] Create environment variables for RPC endpoints and API keys.
+- [x] Configure RPC providers for all chains the agent will operate on.
+- [x] Setup a wallet that will be used by the agent for signing transactions.
+- [x] Create a basic script that successfully connects to a blockchain network.
 
 ## 4. Integrate the LI.FI Execution Layer
 
-- [ ] Install the official SDK for LI.FI.
-- [ ] Implement a function that retrieves cross-chain routes between tokens.
-- [ ] Implement a function that executes bridge or swap transactions through LI.FI.
-- [ ] Add a route scoring mechanism that selects the most efficient execution path.
-- [ ] Implement transaction monitoring so the agent knows when execution completes.
-- [ ] Add retry and fallback logic for failed transactions.
+- [x] Install the official SDK for LI.FI.
+- [x] Implement a function that retrieves cross-chain routes between tokens.
+- [x] Implement a function that executes bridge or swap transactions through LI.FI.
+- [x] Add a route scoring mechanism that selects the most efficient execution path.
+- [x] Implement transaction monitoring so the agent knows when execution completes.
+- [x] Add retry and fallback logic for failed transactions.
 
 ## 5. Build the Market Data Layer
 
