@@ -37,12 +37,12 @@
 
 ## 5. Build the Market Data Layer
 
-- [ ] Implement a service that fetches token prices from APIs such as Dexscreener or CoinGecko.
-- [ ] Implement a service that fetches liquidity and volume information for tokens.
-- [ ] Implement a service that retrieves yield information from DeFi protocols.
-- [ ] Normalize all incoming data into a consistent format for the agent.
-- [ ] Cache market data to reduce unnecessary API requests.
-- [ ] Implement periodic updates so the agent always has fresh data.
+- [x] Implement a service that fetches token prices from APIs such as Dexscreener or CoinGecko.
+- [x] Implement a service that fetches liquidity and volume information for tokens.
+- [x] Implement a service that retrieves yield information from DeFi protocols.
+- [x] Normalize all incoming data into a consistent format for the agent.
+- [x] Cache market data to reduce unnecessary API requests.
+- [x] Implement periodic updates so the agent always has fresh data.
 
 ## 6. Implement the Strategy Engine
 

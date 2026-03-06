@@ -11,7 +11,8 @@
     "get-chains": "tsx src/get-chains.ts",
     "get-tokens": "tsx src/get-tokens.ts",
     "check-status": "tsx src/check-status.ts",
-    "execute-real-transaction": "tsx src/execute-real-transaction.ts"
+    "execute-real-transaction": "tsx src/execute-real-transaction.ts",
+    "market-data": "tsx src/market-data-test.ts"
   },
   "keywords": [
     "lifi",
