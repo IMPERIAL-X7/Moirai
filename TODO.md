@@ -55,12 +55,12 @@
 
 ## 7. Implement Portfolio Management
 
-- [ ] Create a portfolio object that tracks token balances across chains.
-- [ ] Implement a function that updates balances after every trade.
-- [ ] Track realized and unrealized profit for each strategy.
-- [ ] Track the cost basis of each position.
-- [ ] Implement portfolio rebalancing logic if allocations drift too far from targets.
-- [ ] Persist portfolio state to a local file.
+- [x] Create a portfolio object that tracks token balances across chains.
+- [x] Implement a function that updates balances after every trade.
+- [x] Track realized and unrealized profit for each strategy.
+- [x] Track the cost basis of each position.
+- [x] Implement portfolio rebalancing logic if allocations drift too far from targets.
+- [x] Persist portfolio state to a local file.
 
 ## 8. Implement the Agent Decision Loop
 

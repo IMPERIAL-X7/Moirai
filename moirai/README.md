@@ -608,6 +608,168 @@ For more information about the LI.FI API:
 - [Rate Limits](https://docs.li.fi/integration-options/lifi-api/rate-limits)
 - [Error Codes](https://docs.li.fi/integration-options/lifi-api/error-codes)
 
+---
+
+## Moirai Agent Modules
+
+Everything below documents the custom agent layers built on top of the LI.FI execution scaffold.
+
+---
+
+### Market Data Layer (`src/data/`)
+
+#### What's implemented
+
+| File | Purpose |
+|------|---------|
+| `types.ts` | Canonical types: `TokenState`, `YieldOpportunity`, `ChainState`, `MarketSnapshot` |
+| `cache.ts` | Generic in-memory cache with configurable TTL (default 5 min) |
+| `price-service.ts` | Fetches token prices, 24h volume, liquidity, and price change from DexScreener → CoinGecko fallback |
+| `liquidity-service.ts` | Pool-level liquidity/volume breakdown per token via DexScreener |
+| `yield-service.ts` | Fetches DeFi yield/APY data from DeFi Llama (`/pools` endpoint) |
+| `market-data.ts` | Orchestrator — calls all services in parallel, assembles a single `MarketSnapshot`, caches it |
+
+**Key functions:**
+
+- **`fetchTokenStates(queries)`** — Takes an array of `{ symbol, address, chainId }`, returns `TokenState[]` with live prices. Tries DexScreener first, falls back to CoinGecko.
+- **`fetchPoolsForToken(address, chainId)`** — Returns individual DEX pool data (pair, volume, liquidity) for a token.
+- **`fetchYields(filter)`** — Fetches yield opportunities filtered by chain IDs, token symbols, and minimum TVL.
+- **`getMarketSnapshot(opts?)`** — Single entry point for the agent loop. Fetches tokens + yields in parallel, returns a cached `MarketSnapshot`.
+- **`startPeriodicUpdates(intervalMs)`** / **`stopPeriodicUpdates()`** — Background refresh on a timer so the agent always has fresh data.
+
+#### What will need to change for real trading
+
+- **Gas price tracking** — `ChainState.gasPriceGwei` is currently `null`. Wire it to an RPC `eth_gasPrice` call per chain so the strategy engine can factor gas costs into decisions.
+- **Memecoin discovery** — Currently uses a hardcoded token universe (WETH + USDC on 4 chains). Add dynamic discovery from trending token APIs or social signals.
+- **Rate limit management** — DexScreener and CoinGecko have rate limits. The cache helps, but production use should add per-source rate tracking and backoff.
+- **Data validation** — Currently trusts API responses. Add sanity checks (e.g. reject prices that are 0 or orders of magnitude off from previous snapshot).
+
+---
+
+### Strategy Engine (`src/strategy/`)
+
+#### What's implemented
+
+| File | Purpose |
+|------|---------|
+| `types.ts` | Core types: `PortfolioState`, `Position`, `StrategyCandidate`, `DecisionPlan`, `ActionType` |
+| `engine.ts` | Pluggable strategy engine with default "Momentum + Yield" logic and a registry |
+
+**Key types:**
+
+- **`PortfolioState`** — `{ balances: Record<string, number>, positions: Position[], totalValueUSD: number }` — read-only view consumed by strategies.
+- **`Position`** — Per-token/per-chain: amount, entry price, cost basis, realized/unrealized PnL.
+- **`StrategyCandidate`** — A proposed action: `{ actionType, fromChainId, toChainId, fromToken, toToken, amount, score, rationale }`.
+- **`DecisionPlan`** — Output of a strategy evaluation: all candidates, the selected one, and a reasoning string.
+
+**Key functions:**
+
+- **`DefaultStrategy.evaluate(market, portfolio, epochId)`** — The built-in strategy logic:
+  1. Scans `MarketSnapshot.yields` for USDC APY above 5% → generates a `bridge` candidate.
+  2. Scans WETH tokens for 24h price change > +3% → generates a `rebalance` to WETH candidate.
+  3. Scans WETH tokens for 24h price change < −3% → generates a `rebalance` to USDC candidate.
+  4. If no signal fires → generates a `hold` candidate.
+  5. Selects the highest-scoring candidate.
+- **`StrategyRegistry`** — Array of `StrategyEngine` implementations. Add new strategies by pushing to this array.
+
+**`StrategyEngine` interface:**
+
+```typescript
+interface StrategyEngine {
+  name: string;
+  description: string;
+  evaluate(market: MarketSnapshot, portfolio: PortfolioState, epochId: string): DecisionPlan;
+}
+```
+
+**Default parameters (easy to change):**
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `USDC_YIELD_THRESHOLD` | 5% APY | Minimum yield to trigger a bridge |
+| `WETH_UP_THRESHOLD` | +3% 24h | Minimum uptrend to rebalance into WETH |
+| `WETH_DOWN_THRESHOLD` | −3% 24h | Minimum downtrend to rebalance out of WETH |
+| `MIN_TRADE_SIZE_USD` | $100 | Floor for any trade; otherwise uses 20% of portfolio |
+
+#### What will need to change for real trading
+
+- **Position-aware sizing** — Currently uses a flat 20% of portfolio or $100 minimum. Real trading should factor in existing position sizes, available balance on the source chain, and gas costs.
+- **Multi-strategy evaluation** — The registry is wired but only one strategy runs. The agent loop should evaluate all registered strategies and pick the best `DecisionPlan` across them.
+- **Slippage estimation** — Candidates don't yet estimate expected slippage. Integrate with LI.FI `/quote` to get actual slippage before scoring.
+- **Cooldown / rate limiting** — No protection against flipping back and forth every epoch. Add a cooldown timer per action type.
+
+---
+
+### Portfolio Management (`src/portfolio/`)
+
+#### What's implemented
+
+| File | Purpose |
+|------|---------|
+| `types.ts` | `TradeRecord`, `AllocationTarget`, `DriftEntry`, `PersistedPortfolio`, `PositionRecord` |
+| `portfolio-manager.ts` | The `PortfolioManager` class — full position tracker with persistence |
+| `index.ts` | Barrel re-export |
+| `portfolio-test.ts` | Smoke test: deposits → trades → mark-to-market → drift → save/load |
+
+**Key types:**
+
+- **`TradeRecord`** — Immutable ledger entry for every trade: action type, chains, tokens, amounts, prices, fees, tx hash, status.
+- **`AllocationTarget`** — Per-symbol target weight and max drift tolerance (e.g. USDC 50% ± 10%).
+- **`DriftEntry`** — Result of comparing one asset's actual weight vs its target: `{ symbol, targetWeight, actualWeight, driftPct, needsRebalance }`.
+- **`PersistedPortfolio`** — The on-disk format: version, balances, positions, trade history, allocation targets, metadata (deposits, withdrawals, high water mark).
+
+**Key functions on `PortfolioManager`:**
+
+| Method | What it does |
+|--------|-------------|
+| `getState()` | Returns a read-only `PortfolioState` snapshot for the strategy engine |
+| `getBalance(chainId, address)` | Look up balance for a specific token on a specific chain |
+| `recordDeposit(chainId, token, amount)` | Records an external deposit, updates balances and positions |
+| `applyTrade(trade)` | Applies a confirmed trade: deducts source balance, credits destination, updates cost basis via weighted average, calculates realized PnL on the closed portion, appends to trade history |
+| `markToMarket(snapshot)` | Refreshes all positions with live prices from a `MarketSnapshot`, recalculates unrealized PnL, updates the high water mark |
+| `getTotalValueUSD()` | Sum of `amount × priceUSD` across all positions |
+| `getTotalRealizedPnL()` | Sum of realized PnL across all positions |
+| `getTotalUnrealizedPnL()` | Sum of unrealized PnL across all positions |
+| `checkDrift()` | Compares current portfolio weights vs allocation targets, returns `DriftEntry[]` — flags any asset exceeding its `maxDriftPct` |
+| `setAllocationTargets(targets)` | Override the default allocation targets |
+| `getTradeHistory()` / `getRecentTrades(n)` | Access the full or last-N trade ledger |
+| `save()` | Serializes full state to a local JSON file (`data/portfolio.json`) |
+| `load()` | Restores state from disk; returns `false` if no file exists. Positions are reconstructed with stub `TokenState` — call `markToMarket()` after loading to refresh live prices |
+| `printSummary()` | Logs a formatted overview: total value, PnL, positions with weights, and allocation drift |
+
+**Default allocation targets:**
+
+| Symbol | Target weight | Max drift |
+|--------|--------------|-----------|
+| USDC | 50% | ±10% |
+| ETH | 30% | ±10% |
+| WETH | 15% | ±10% |
+| Other (memecoins) | 5% | — |
+
+**How cost basis works:**
+
+- On deposit or buy: weighted-average cost basis = `(existingCostBasis + newAmount × newPrice) / totalAmount`
+- On sell or close: realized PnL = `(exitPrice − avgCostPerUnit) × soldAmount`
+- Partial closes reduce the position proportionally, keeping the per-unit cost the same
+
+**How drift detection works:**
+
+1. Aggregate position values by symbol across all chains
+2. Compute each symbol's weight as `symbolValueUSD / totalPortfolioValueUSD`
+3. Compare against `AllocationTarget.targetWeight`
+4. If `|actualWeight − targetWeight| × 100 > maxDriftPct` → `needsRebalance = true`
+
+#### What will need to change for real trading
+
+- **On-chain balance verification** — Currently trusts its own bookkeeping. For real trades, query actual on-chain balances via RPC (`eth_call` on ERC-20 `balanceOf`) and reconcile with internal state. Flag discrepancies.
+- **Pending transaction handling** — `applyTrade` assumes trades are confirmed. For real execution, track pending transactions separately and only commit to balances after confirmation (the `status: 'pending'` field is defined but not yet used for gating).
+- **Multi-wallet support** — Currently assumes a single wallet. If the agent manages multiple wallets or uses smart contract wallets, the balance key scheme needs a wallet address dimension.
+- **Persistence backend** — Local JSON file works for development. In production, swap to SQLite or a database for atomic writes, concurrent access, and crash recovery.
+- **Fee accounting** — `TradeRecord.feesUSD` is recorded but not deducted from portfolio value calculations. For real P&L tracking, subtract cumulative fees from total returns.
+- **Withdrawal tracking** — `totalWithdrawalsUSD` is defined but never incremented. Add a `recordWithdrawal()` method when the agent supports withdrawals.
+
+---
+
 ## Support
 
 - **Documentation**: https://docs.li.fi

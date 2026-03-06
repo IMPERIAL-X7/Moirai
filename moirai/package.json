@@ -13,7 +13,8 @@
     "check-status": "tsx src/check-status.ts",
     "execute-real-transaction": "tsx src/execute-real-transaction.ts",
     "market-data": "tsx src/market-data-test.ts",
-    "strategy-test": "tsx src/strategy/strategy-test.ts"
+    "strategy-test": "tsx src/strategy/strategy-test.ts",
+    "portfolio-test": "tsx src/portfolio/portfolio-test.ts"
   },
   "keywords": [
     "lifi",
