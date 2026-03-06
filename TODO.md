@@ -64,12 +64,12 @@
 
 ## 8. Implement the Agent Decision Loop
 
-- [ ] Create a loop that runs at a fixed time interval.
-- [ ] Fetch fresh market data at the beginning of every loop iteration.
-- [ ] Evaluate the strategy using the latest data.
-- [ ] Generate an action plan such as bridge, swap, or hold.
-- [ ] Execute the action plan through the execution layer.
-- [ ] Update the portfolio state after execution.
+- [x] Create a loop that runs at a fixed time interval.
+- [x] Fetch fresh market data at the beginning of every loop iteration.
+- [x] Evaluate the strategy using the latest data.
+- [x] Generate an action plan such as bridge, swap, or hold.
+- [x] Execute the action plan through the execution layer.
+- [x] Update the portfolio state after execution.
 
 Example structure:
 

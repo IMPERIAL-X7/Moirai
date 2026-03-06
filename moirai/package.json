@@ -14,7 +14,8 @@
     "execute-real-transaction": "tsx src/execute-real-transaction.ts",
     "market-data": "tsx src/market-data-test.ts",
     "strategy-test": "tsx src/strategy/strategy-test.ts",
-    "portfolio-test": "tsx src/portfolio/portfolio-test.ts"
+    "portfolio-test": "tsx src/portfolio/portfolio-test.ts",
+    "agent-test": "tsx src/agent/agent-test.ts"
   },
   "keywords": [
     "lifi",

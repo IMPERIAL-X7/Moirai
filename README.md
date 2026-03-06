@@ -211,6 +211,42 @@ This allows replacing strategy logic without touching execution reliability logi
 
 ---
 
+## Agent Decision Loop (Section 8)
+
+### Overview
+
+The agent decision loop is the orchestrator that ties market data, strategy evaluation, trade execution, and portfolio updates into a single continuous process. Each iteration is called an **epoch**.
+
+### Epoch Flow
+
+1. **Data Fetch** — Pull a fresh `MarketSnapshot` (token prices, yields, chain state).
+2. **Strategy Eval** — Pass the snapshot + current portfolio state to the active strategy → get a `DecisionPlan` with scored candidates and a selected action.
+3. **Execution** — Route the selected action through the executor (paper or live). Swaps/bridges produce an `ExecutionResult`; holds are no-ops.
+4. **Portfolio Update** — Apply the trade to the portfolio manager, mark-to-market all positions.
+5. **Persist** — Save the updated portfolio to disk.
+
+### Key Design Decisions
+
+- **Injectable executor** — The `Executor` type is a function signature. Swap between `paperExecutor` (simulated fills) and a real LI.FI executor without changing any loop logic.
+- **Injectable data fetcher** — `SnapshotFetcher` can be replaced for testing (mock data) or custom data pipelines.
+- **Failure tracking** — Consecutive data or execution failures are counted. The loop auto-pauses when thresholds are exceeded and resumes when a healthy epoch completes.
+- **Epoch logging** — Every epoch produces an `EpochLog` with phase-by-phase timing, success/failure for each phase, trade details, and outcome classification (`executed`, `hold`, `data_error`, `exec_error`, `skipped`).
+
+### Paper Trading
+
+The built-in `paperExecutor` simulates trades using real market prices with configurable slippage (0.3%) and fee (0.1%) deductions. No wallet or RPC connection required.
+
+### Running the Smoke Test
+
+```bash
+cd moirai
+npx tsx src/agent/agent-test.ts
+```
+
+Runs 3 epochs with mock data, alternating swap and hold actions, and prints a full portfolio summary.
+
+---
+
 ## 5) Opportunity Evaluation Framework
 
 Each candidate action is scored with a weighted model:

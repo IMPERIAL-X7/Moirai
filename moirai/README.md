@@ -770,6 +770,108 @@ interface StrategyEngine {
 
 ---
 
+## Agent Decision Loop Implementation (Section 8)
+
+### Architecture
+
+The agent loop (`src/agent/agent-loop.ts`) orchestrates the full observe → evaluate → execute → update pipeline. Each iteration is called an **epoch** and runs through 5 sequential phases.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/agent/types.ts` | `AgentConfig`, `EpochLog`, `PhaseLog`, `EpochPhase`, `EpochOutcome`, `AgentStatus` |
+| `src/agent/agent-loop.ts` | `AgentLoop` class, `Executor` type, `ExecutionResult`, `SnapshotFetcher`, `paperExecutor` |
+| `src/agent/index.ts` | Barrel exports |
+| `src/agent/agent-test.ts` | Smoke test with mock data and injectable snapshot fetcher |
+
+### Types
+
+**`AgentConfig`** — Configuration for the loop:
+- `epochIntervalMs` — Delay between epochs (default: 1 hour)
+- `maxDataFailures` / `maxExecFailures` — Consecutive failure limits before auto-pause (default: 3)
+- `verbose` — Enable detailed console logging
+- `dryRun` — Log decisions without executing
+
+**`EpochLog`** — Full record of a single epoch:
+- `epochId`, `startedAt`, `durationMs`
+- `phases: PhaseLog[]` — Per-phase timing and success/failure
+- `outcome: EpochOutcome` — `'executed' | 'hold' | 'data_error' | 'exec_error' | 'skipped'`
+- `trade?: TradeRecord` — The trade that was applied (if any)
+
+**`Executor`** — `(candidate: StrategyCandidate) => Promise<ExecutionResult>` — Pluggable execution function.
+
+**`SnapshotFetcher`** — `(opts?: SnapshotOptions) => Promise<MarketSnapshot>` — Pluggable data fetch function.
+
+**`ExecutionResult`**:
+- `txHash`, `fromAmount`, `toAmount`, `fromToken`, `toToken`
+- `fromChainId`, `toChainId`, `feesUSD`, `status`
+
+### AgentLoop Class
+
+**Constructor parameters:**
+- `config?: Partial<AgentConfig>` — Merged with `DEFAULT_AGENT_CONFIG`
+- `portfolio: PortfolioManager` — Tracks balances and PnL
+- `strategy: StrategyEngine` — Evaluates market state into action plans
+- `executor: Executor` — Executes the selected action (paper or live)
+- `fetchSnapshot?: SnapshotFetcher` — Defaults to `getMarketSnapshot` from the data layer
+- `snapshotOpts?: SnapshotOptions` — Passed to the snapshot fetcher
+
+**Key methods:**
+
+| Method | Description |
+|--------|-------------|
+| `runEpoch()` | Executes one full epoch through all 5 phases, returns `EpochLog` |
+| `start()` | Begins the continuous loop at `epochIntervalMs` interval |
+| `stop()` | Stops the continuous loop |
+| `getStatus()` | Returns `AgentStatus` with uptime, epoch count, failure counters, and `isRunning` |
+| `getEpochLogs()` | Returns all epoch logs for analysis |
+
+### Epoch Phases
+
+1. **`data_fetch`** — Calls `fetchSnapshot()` to get fresh market data. On failure, increments `consecutiveDataFailures` and logs `data_error`.
+2. **`strategy_eval`** — Calls `strategy.evaluate(snapshot, portfolioState, epochId)` to get a `DecisionPlan` with scored candidates and a selected action.
+3. **`execution`** — If the selected action is `hold`, logs and skips. Otherwise calls `executor(selected)` to execute the trade. On failure, increments `consecutiveExecFailures`.
+4. **`portfolio_update`** — Applies the trade via `portfolio.applyTrade()`, then refreshes all prices via `portfolio.markToMarket(snapshot)`.
+5. **`persist`** — Calls `portfolio.save()` to write state to disk.
+
+### Paper Executor
+
+`paperExecutor` simulates trades without any blockchain interaction:
+- Calculates `toAmount = fromAmount / fromTokenPrice × toTokenPrice`
+- Applies 0.3% slippage deduction
+- Applies 0.1% fee deduction
+- Returns a synthetic `txHash` prefixed with `paper-`
+
+### Failure Handling
+
+- Consecutive data failures exceeding `maxDataFailures` → auto-pause with logged warning
+- Consecutive execution failures exceeding `maxExecFailures` → auto-pause
+- A successful epoch resets both failure counters to zero
+- Manual resume via `start()` after fixing the issue
+
+### Running the Smoke Test
+
+```bash
+npx tsx src/agent/agent-test.ts
+```
+
+Creates a mock portfolio (1 ETH + 5000 USDC), runs 3 epochs alternating swap/hold with mock market data, and prints:
+- Per-epoch outcome, phase results, and trade details
+- Full portfolio summary with positions, PnL, and allocation drift
+- Epoch summary table with timing
+
+#### What will need to change for real trading
+
+- **Real executor** — Replace `paperExecutor` with a function that calls the LI.FI API (`getQuote` → `executeRoute` → poll status). The `Executor` type signature stays the same.
+- **Wallet integration** — The real executor needs a `viem` wallet client for transaction signing. Pass it at construction time.
+- **Epoch scheduling** — `start()` uses `setInterval`. For production, use a cron scheduler or process manager for reliability.
+- **Error recovery** — On `data_error` or `exec_error`, the loop currently pauses. Add alerting (webhook, email) and automatic retry with exponential backoff.
+- **Idempotency** — `epochId` is a monotonic counter. For crash recovery, persist the last completed `epochId` and skip already-executed epochs on restart.
+- **Concurrency guard** — Ensure only one epoch runs at a time, especially across process restarts. Use a lockfile or database advisory lock.
+
+---
+
 ## Support
 
 - **Documentation**: https://docs.li.fi
