@@ -1,0 +1,36 @@
+{
+  "name": "lifi-api-quickstart-example",
+  "version": "1.0.0",
+  "description": "LI.FI API Quickstart Example - Get quotes and check status using the REST API",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "get-chains": "tsx src/get-chains.ts",
+    "get-tokens": "tsx src/get-tokens.ts",
+    "check-status": "tsx src/check-status.ts",
+    "execute-real-transaction": "tsx src/execute-real-transaction.ts"
+  },
+  "keywords": [
+    "lifi",
+    "api",
+    "rest",
+    "cross-chain",
+    "bridge",
+    "quote"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "viem": "^2.38.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
