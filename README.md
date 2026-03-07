@@ -247,6 +247,63 @@ Runs 3 epochs with mock data, alternating swap and hold actions, and prints a fu
 
 ---
 
+## Simulation & Paper Trading (Section 9)
+
+### Overview
+
+The simulation system runs the **full agent pipeline with real market data** — live DexScreener/CoinGecko prices, live DeFi Llama yields, and real LI.FI quotes — but **never submits an on-chain transaction**. Instead, every trade decision is logged to a detailed JSONL audit file with all the data needed for manual verification.
+
+### What's Real vs. Simulated
+
+| Component | Real or Simulated |
+|-----------|------------------|
+| Market data (prices, yields) | **Real** — live API calls |
+| Strategy evaluation | **Real** — same engine as production |
+| LI.FI quotes (fees, routes, delays) | **Real** — actual `/quote` endpoint |
+| Transaction execution | **Simulated** — logged, never sent |
+| Portfolio balances | **Virtual** — start with seed balances |
+| Gas & bridge fees | **Real** — from LI.FI quote estimates |
+| Bridge delays | **Real** — from LI.FI duration estimates |
+
+### Audit Log
+
+Every epoch produces a JSONL entry containing:
+- **Price evidence** — price, source (dexscreener/coingecko), volume, liquidity, 24h change for every token
+- **All strategy candidates** — every option the strategy considered, with scores and rationale
+- **LI.FI quote snapshot** — request params, tool/bridge used, estimated output, gas cost, bridge fees, estimated delay, step count
+- **Simulated outcome** — calculated output amount, slippage, total fees
+- **Human-readable summary** — one-line trade description for quick scanning
+
+### Running a Simulation
+
+```bash
+cd moirai
+
+# Smoke test (mock data, no API calls)
+npx tsx src/simulation/sim-test.ts
+
+# Real simulation (5 epochs, live market data)
+npx tsx src/simulation/run-simulation.ts
+
+# 10 epochs with 60s between each
+npx tsx src/simulation/run-simulation.ts 10 60
+```
+
+Output files are written to `data/simulation/`:
+- `trades-<timestamp>.jsonl` — full trade audit log
+- `summary-<timestamp>.json` — session-level statistics
+
+### Session Statistics
+
+At the end of each simulation run, a summary is generated tracking:
+- Total volume, gas costs, bridge fees
+- Net return (USD and %)
+- Max drawdown
+- Average slippage and bridge delay
+- Trade counts (executed, held, failed)
+
+---
+
 ## 5) Opportunity Evaluation Framework
 
 Each candidate action is scored with a weighted model:

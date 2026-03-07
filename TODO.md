@@ -83,12 +83,12 @@ update_portfolio()
 
 ## 9. Implement Simulation and Paper Trading
 
-- [ ] Create a simulated portfolio that uses virtual balances instead of real tokens.
-- [ ] Replace execution calls with simulated trades during testing.
-- [ ] Use real market prices to calculate simulated trade outcomes.
-- [ ] Implement simulated bridge delays and bridge fees.
-- [ ] Track simulated performance metrics over time.
-- [ ] Use this environment to tune strategy parameters.
+- [x] Create a simulated portfolio that uses virtual balances instead of real tokens.
+- [x] Replace execution calls with simulated trades during testing.
+- [x] Use real market prices to calculate simulated trade outcomes.
+- [x] Implement simulated bridge delays and bridge fees.
+- [x] Track simulated performance metrics over time.
+- [x] Use this environment to tune strategy parameters.
 
 ## 10. Implement Performance Analytics
 

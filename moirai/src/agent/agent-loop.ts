@@ -111,6 +111,7 @@ export class AgentLoop {
   private executor: Executor;
   private snapshotOpts: SnapshotOptions;
   private fetchSnapshot: SnapshotFetcher;
+  private onPlanReady?: (snapshot: MarketSnapshot, plan: DecisionPlan, epochId: string) => void;
 
   private status: AgentStatus = 'idle';
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -126,6 +127,8 @@ export class AgentLoop {
     executor?: Executor;
     snapshotOpts?: SnapshotOptions;
     fetchSnapshot?: SnapshotFetcher;
+    /** Called after strategy eval, before execution. Used by simulation. */
+    onPlanReady?: (snapshot: MarketSnapshot, plan: DecisionPlan, epochId: string) => void;
   }) {
     this.config = { ...DEFAULT_AGENT_CONFIG, ...opts?.config };
     this.portfolio = opts?.portfolio ?? new PortfolioManager();
@@ -133,6 +136,7 @@ export class AgentLoop {
     this.executor = opts?.executor ?? paperExecutor;
     this.snapshotOpts = opts?.snapshotOpts ?? {};
     this.fetchSnapshot = opts?.fetchSnapshot ?? getMarketSnapshot;
+    this.onPlanReady = opts?.onPlanReady;
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────
@@ -231,6 +235,11 @@ export class AgentLoop {
         const msg = err instanceof Error ? err.message : String(err);
         phases.push(p2.finish(false, msg));
         throw new Error(`Strategy eval failed: ${msg}`);
+      }
+
+      // Notify listener (simulation hooks into this)
+      if (this.onPlanReady && snapshot && plan) {
+        this.onPlanReady(snapshot, plan, epochId);
       }
 
       // ── Phase 3: Execution ─────────────────────────────────────

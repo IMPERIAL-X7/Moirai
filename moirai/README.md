@@ -872,6 +872,104 @@ Creates a mock portfolio (1 ETH + 5000 USDC), runs 3 epochs alternating swap/hol
 
 ---
 
+## Simulation & Paper Trading Implementation (Section 9)
+
+### Architecture
+
+The simulation system plugs into the existing `AgentLoop` via the injectable `Executor` pattern. Everything upstream (market data, strategy evaluation) is real — only the transaction submission is replaced with logging.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/simulation/types.ts` | `SimulatedTradeLog`, `QuoteSnapshot`, `PriceEvidence`, `SimulationStats`, `SimulationConfig` |
+| `src/simulation/sim-executor.ts` | `createSimulationExecutor()` — fetches real LI.FI quotes, logs everything, returns simulated `ExecutionResult` |
+| `src/simulation/sim-logger.ts` | `SimulationLogger` — writes JSONL audit logs and JSON session summaries |
+| `src/simulation/run-simulation.ts` | Main runner script — seeds portfolio, wires up agent loop, runs N epochs with real data |
+| `src/simulation/sim-test.ts` | Smoke test with mock data (no API calls) |
+| `src/simulation/index.ts` | Barrel exports |
+
+### Key Types
+
+**`SimulatedTradeLog`** — One entry per epoch in the JSONL audit file:
+- `priceEvidence[]` — Price, source, volume, liquidity, 24h change for every token at decision time
+- `allCandidates[]` — Every `StrategyCandidate` the strategy considered
+- `selectedCandidate` — The winning candidate with score and rationale
+- `strategyReasoning` — Full reasoning string
+- `quote: QuoteSnapshot | null` — Real LI.FI quote data (request params, tool, output, gas, bridge fees, delay, step count, raw response)
+- `quoteError` — If the quote fetch failed
+- `simulatedToAmount` / `simulatedSlippagePct` / `gasCostUSD` / `bridgeFeesUSD` / `totalFeesUSD`
+- `estimatedBridgeDelaySec` — From LI.FI duration estimate
+- `yieldSnapshot[]` / `chainSnapshot[]` — Market context at decision time
+- `outcome` — `'simulated_execution' | 'hold' | 'quote_failed' | 'error'`
+- `summary` — One-line human-readable trade description
+
+**`QuoteSnapshot`** — Captured from a real LI.FI `/quote` response:
+- `requestParams` — Exact params sent (for reproducibility)
+- `tool` / `toolName` — Bridge/DEX selected
+- `estimatedOutputFormatted` / `minOutputFormatted`
+- `gasCostUSD` / `feeCostUSD` / `totalCostUSD`
+- `estimatedBridgeDurationSec`
+- `stepCount`
+- `rawQuote` — Full raw response for deep inspection
+
+**`SimulationStats`** — Session-level aggregates:
+- `totalVolumeUSD`, `totalGasCostUSD`, `totalBridgeFeesUSD`, `totalFeesUSD`
+- `netReturnUSD` / `netReturnPct`
+- `maxDrawdownPct`
+- `avgSlippagePct`, `avgBridgeDelaySec`
+- `tradesExecuted`, `tradesHeld`, `tradesFailed`
+
+### How It Works
+
+1. **`createSimulationExecutor()`** returns an `{ executor, setEpochContext }` pair
+2. The `executor` plugs into `AgentLoop` as the `Executor` callback
+3. `setEpochContext` is wired to `AgentLoop.onPlanReady` — receives snapshot + plan after strategy eval
+4. For each trade: executor fetches a **real LI.FI `/quote`** to get accurate gas, bridge fees, output estimate, and bridge delay
+5. If the quote fails, falls back to configurable slippage/fee simulation
+6. Hold decisions are logged automatically via `setEpochContext` (the agent loop skips the executor for holds)
+7. `SimulationLogger` appends each entry to a JSONL file immediately (crash-safe)
+8. At session end, `writeSummary()` computes aggregate stats and writes a JSON summary
+
+### Running
+
+```bash
+# Smoke test (mock data, no network)
+npm run sim-test
+
+# Live simulation (default 5 epochs)
+npm run simulate
+
+# Custom: 10 epochs, 60s between each
+npm run simulate 10 60
+```
+
+### Output Files
+
+Written to `data/simulation/`:
+- `trades-YYYY-MM-DDTHH-MM-SS.jsonl` — One JSON object per epoch (JSONL format)
+- `summary-YYYY-MM-DDTHH-MM-SS.json` — Session statistics
+
+### Manual Verification Workflow
+
+Each trade log entry contains everything needed for manual verification:
+
+1. **Check the price** — `priceEvidence` shows the exact price, source (dexscreener/coingecko), and fetch timestamp
+2. **Verify the decision** — `allCandidates` + `strategyReasoning` explain why this trade was chosen
+3. **Validate the quote** — `quote.requestParams` can be re-submitted to `https://li.quest/v1/quote` to compare
+4. **Confirm fees** — `gasCostUSD` + `bridgeFeesUSD` come from the real LI.FI estimate
+5. **Check the math** — `simulatedToAmount` should equal `fromAmount × fromPrice × (1 - slippage) / toPrice`
+6. **Review bridge delay** — `estimatedBridgeDelaySec` from LI.FI's execution duration estimate
+
+#### What will need to change for real trading
+
+- **Replace executor** — Swap `createSimulationExecutor()` with a real LI.FI executor that calls `/advanced/routes` → `/advanced/stepTransaction` → wallet sign → status poll. The `Executor` type signature is identical.
+- **Remove virtual balances** — Real portfolio syncs from on-chain `balanceOf` calls instead of seed deposits.
+- **Alerting** — Add webhook/email notifications when the agent pauses due to failures.
+- **Historical replay** — Inject a `fetchSnapshot` that returns saved snapshots for backtesting without live API calls.
+
+---
+
 ## Support
 
 - **Documentation**: https://docs.li.fi
