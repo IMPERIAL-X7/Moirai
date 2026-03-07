@@ -39,7 +39,8 @@ export const DefaultStrategy: StrategyEngine = {
     const reasoning: string[] = [];
 
     // --- Parameters ---
-    const USDC_YIELD_THRESHOLD = 0.05; // 5% APY
+    const USDC_YIELD_THRESHOLD = 5; // 5% APY (compared against apyPct which is already a %)
+    const USDC_YIELD_MAX_CREDIBLE = 50; // Ignore yields above 50% — likely unreliable
     const WETH_UP_THRESHOLD = 0.03; // +3% 24h
     const WETH_DOWN_THRESHOLD = -0.03; // -3% 24h
     const MIN_TRADE_SIZE_USD = 100;
@@ -48,23 +49,29 @@ export const DefaultStrategy: StrategyEngine = {
     const usdcTokens = market.tokens.filter((t) => t.symbol === 'USDC');
     const wethTokens = market.tokens.filter((t) => t.symbol === 'WETH');
 
+    // Determine the chain we hold most value on
+    const homeChainId = portfolio.positions[0]?.chainId ?? 1;
+
     // --- Yield opportunity ---
+    // Filter to credible USDC yields on a DIFFERENT chain than our home chain
     const bestUsdcYield = market.yields
       .filter((y) => y.symbol === 'USDC')
+      .filter((y) => y.apyPct <= USDC_YIELD_MAX_CREDIBLE) // ignore suspiciously high yields
+      .filter((y) => y.chainId !== homeChainId) // must be cross-chain to justify a bridge
       .sort((a, b) => b.apyPct - a.apyPct)[0];
 
-    if (bestUsdcYield && bestUsdcYield.apyPct / 100 > USDC_YIELD_THRESHOLD) {
+    if (bestUsdcYield && bestUsdcYield.apyPct > USDC_YIELD_THRESHOLD) {
       candidates.push({
         actionType: 'bridge',
-        fromChainId: portfolio.positions[0]?.chainId ?? 1,
+        fromChainId: homeChainId,
         toChainId: bestUsdcYield.chainId,
-        fromToken: usdcTokens.find((t) => t.chainId === (portfolio.positions[0]?.chainId ?? 1)) ?? usdcTokens[0],
+        fromToken: usdcTokens.find((t) => t.chainId === homeChainId) ?? usdcTokens[0],
         toToken: usdcTokens.find((t) => t.chainId === bestUsdcYield.chainId) ?? usdcTokens[0],
         amount: Math.max(MIN_TRADE_SIZE_USD, portfolio.totalValueUSD * 0.2),
         score: bestUsdcYield.apyPct,
         rationale: `Bridge to USDC on chain ${bestUsdcYield.chainId} for APY ${bestUsdcYield.apyPct.toFixed(2)}%`,
       });
-      reasoning.push(`USDC yield ${bestUsdcYield.apyPct.toFixed(2)}% > threshold (${USDC_YIELD_THRESHOLD * 100}%)`);
+      reasoning.push(`USDC yield ${bestUsdcYield.apyPct.toFixed(2)}% > threshold (${USDC_YIELD_THRESHOLD}%)`);
     }
 
     // --- WETH momentum ---
@@ -72,25 +79,25 @@ export const DefaultStrategy: StrategyEngine = {
       if (weth.priceChange24h > WETH_UP_THRESHOLD) {
         candidates.push({
           actionType: 'rebalance',
-          fromChainId: portfolio.positions[0]?.chainId ?? 1,
-          fromToken: usdcTokens.find((t) => t.chainId === (portfolio.positions[0]?.chainId ?? 1)) ?? usdcTokens[0],
+          fromChainId: homeChainId,
+          fromToken: usdcTokens.find((t) => t.chainId === homeChainId) ?? usdcTokens[0],
           toToken: weth,
           amount: Math.max(MIN_TRADE_SIZE_USD, portfolio.totalValueUSD * 0.2),
           score: weth.priceChange24h,
-          rationale: `Rebalance to WETH on chain ${weth.chainId} (up ${weth.priceChange24h * 100}% 24h)`,
+          rationale: `Rebalance to WETH on chain ${weth.chainId} (up ${(weth.priceChange24h * 100).toFixed(1)}% 24h)`,
         });
-        reasoning.push(`WETH price up ${weth.priceChange24h * 100}% > threshold (${WETH_UP_THRESHOLD * 100}%)`);
+        reasoning.push(`WETH price up ${(weth.priceChange24h * 100).toFixed(1)}% > threshold (${WETH_UP_THRESHOLD * 100}%)`);
       } else if (weth.priceChange24h < WETH_DOWN_THRESHOLD) {
         candidates.push({
           actionType: 'rebalance',
-          fromChainId: portfolio.positions[0]?.chainId ?? 1,
+          fromChainId: homeChainId,
           fromToken: weth,
-          toToken: usdcTokens.find((t) => t.chainId === (portfolio.positions[0]?.chainId ?? 1)) ?? usdcTokens[0],
+          toToken: usdcTokens.find((t) => t.chainId === homeChainId) ?? usdcTokens[0],
           amount: Math.max(MIN_TRADE_SIZE_USD, portfolio.totalValueUSD * 0.2),
           score: -weth.priceChange24h,
-          rationale: `Rebalance to USDC on chain ${weth.chainId} (down ${weth.priceChange24h * 100}% 24h)`,
+          rationale: `Rebalance to USDC on chain ${weth.chainId} (down ${(weth.priceChange24h * 100).toFixed(1)}% 24h)`,
         });
-        reasoning.push(`WETH price down ${weth.priceChange24h * 100}% < threshold (${WETH_DOWN_THRESHOLD * 100}%)`);
+        reasoning.push(`WETH price down ${(weth.priceChange24h * 100).toFixed(1)}% < threshold (${WETH_DOWN_THRESHOLD * 100}%)`);
       }
     }
 

@@ -1,0 +1,22 @@
+{
+  "sessionId": "sim-1772891331607-nuxs",
+  "startedAt": "2026-03-07T13:48:51.608Z",
+  "endedAt": "2026-03-07T13:51:07.373Z",
+  "totalEpochs": 5,
+  "tradesExecuted": 5,
+  "tradesHeld": 0,
+  "tradesFailed": 0,
+  "totalVolumeUSD": 7030.38,
+  "totalGasCostUSD": 0.23,
+  "totalBridgeFeesUSD": 17.78,
+  "totalFeesUSD": 18.01,
+  "startingPortfolioValueUSD": 6920.33,
+  "endingPortfolioValueUSD": 8993.39,
+  "netReturnUSD": 2073.07,
+  "netReturnPct": 29.96,
+  "realizedPnLUSD": 0,
+  "unrealizedPnLUSD": -1.85,
+  "maxDrawdownPct": 0.53,
+  "avgSlippagePct": 0.262,
+  "avgBridgeDelaySec": 461
+}

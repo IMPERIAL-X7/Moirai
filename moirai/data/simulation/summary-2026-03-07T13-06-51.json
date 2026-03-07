@@ -1,0 +1,22 @@
+{
+  "sessionId": "sim-1772888811177-vzop",
+  "startedAt": "2026-03-07T13:06:51.178Z",
+  "endedAt": "2026-03-07T13:15:40.948Z",
+  "totalEpochs": 10,
+  "tradesExecuted": 0,
+  "tradesHeld": 0,
+  "tradesFailed": 10,
+  "totalVolumeUSD": 0,
+  "totalGasCostUSD": 0,
+  "totalBridgeFeesUSD": 0,
+  "totalFeesUSD": 0,
+  "startingPortfolioValueUSD": 6962.31,
+  "endingPortfolioValueUSD": 6918.61,
+  "netReturnUSD": -43.7,
+  "netReturnPct": -0.63,
+  "realizedPnLUSD": -0.33,
+  "unrealizedPnLUSD": -1.72,
+  "maxDrawdownPct": 0,
+  "avgSlippagePct": 0,
+  "avgBridgeDelaySec": null
+}
