@@ -46,3 +46,17 @@ export interface DecisionPlan {
   selected: StrategyCandidate;
   reasoning: string;
 }
+
+// ── Strategy engine interface ──────────────────────────────────────
+
+export interface StrategyEngine {
+  /** Short identifier used for CLI selection (kebab-case, e.g. "cross-chain-arbitrage"). */
+  id: string;
+  name: string;
+  description: string;
+  evaluate: (
+    market: MarketSnapshot,
+    portfolio: PortfolioState,
+    epochId: string,
+  ) => DecisionPlan;
+}

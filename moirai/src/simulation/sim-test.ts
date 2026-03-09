@@ -70,6 +70,7 @@ const mockSnapshot: MarketSnapshot = {
 let epochNum = 0;
 
 const testStrategy: StrategyEngine = {
+  id: 'sim-test',
   name: 'Sim Test Strategy',
   description: 'Cycles through swap, bridge, hold for simulation testing',
   evaluate: (_market: MarketSnapshot, _portfolio: PortfolioState, epochId: string): DecisionPlan => {

@@ -1,17 +1,30 @@
 /**
  * Smoke test for the Strategy Engine.
  *
- * Run with:  npm run strategy-test
+ * Run with:  npm run strategy-test [strategyId]
  *
  * Fetches market data, mocks a portfolio, and prints the decision plan.
+ * Pass --list to see available strategies.
  */
 
 import { getMarketSnapshot } from '../data/market-data.js';
-import { DefaultStrategy } from './engine.js';
+import { DefaultStrategy, getStrategy, listStrategies } from './engine.js';
 import type { PortfolioState } from './types.js';
 
 async function main() {
-  console.log('🧠 Strategy Engine – Smoke Test\n');
+  const strategyArg = process.argv[2] ?? '';
+
+  if (strategyArg === '--list') {
+    console.log('\nAvailable strategies:\n');
+    for (const s of listStrategies()) {
+      console.log(`  ${s.id.padEnd(26)} ${s.name}`);
+    }
+    process.exit(0);
+  }
+
+  const strategy = strategyArg ? getStrategy(strategyArg) : DefaultStrategy;
+
+  console.log(`🧠 Strategy Engine – Smoke Test  [${strategy.id}]\n`);
 
   const market = await getMarketSnapshot();
 
@@ -34,7 +47,7 @@ async function main() {
 
   const epochId = new Date().toISOString();
 
-  const plan = DefaultStrategy.evaluate(market, portfolio, epochId);
+  const plan = strategy.evaluate(market, portfolio, epochId);
 
   console.log(`Epoch: ${plan.epochId}`);
   console.log(`\nCandidates:`);

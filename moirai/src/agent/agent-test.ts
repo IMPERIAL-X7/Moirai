@@ -70,6 +70,7 @@ const mockSnapshot: MarketSnapshot = {
 let epochNum = 0;
 
 const testStrategy: StrategyEngine = {
+  id: 'agent-test',
   name: 'Test Strategy',
   description: 'Alternates between swap and hold for testing',
   evaluate: (_market: MarketSnapshot, _portfolio: PortfolioState, epochId: string): DecisionPlan => {

@@ -20,7 +20,8 @@ config();
 
 import { AgentLoop } from '../agent/agent-loop.js';
 import { PortfolioManager } from '../portfolio/portfolio-manager.js';
-import { DefaultStrategy } from '../strategy/engine.js';
+import { DefaultStrategy, getStrategy, listStrategies } from '../strategy/engine.js';
+import type { StrategyEngine } from '../strategy/engine.js';
 import { getMarketSnapshot } from '../data/market-data.js';
 import { SimulationLogger } from './sim-logger.js';
 import { createSimulationExecutor } from './sim-executor.js';
@@ -29,9 +30,33 @@ import path from 'path';
 import fs from 'fs';
 
 // ── Parse CLI args ──────────────────────────────────────────────────
+// Usage: npx tsx src/simulation/run-simulation.ts [epochs] [intervalSec] [strategyId]
 
 const totalEpochs = parseInt(process.argv[2] ?? '5', 10);
 const intervalSec = parseInt(process.argv[3] ?? '0', 10);
+const strategyArg = process.argv[4] ?? '';
+
+// Resolve strategy
+let activeStrategy: StrategyEngine;
+if (strategyArg === '--list') {
+  console.log('\nAvailable strategies:\n');
+  for (const s of listStrategies()) {
+    console.log(`  ${s.id.padEnd(26)} ${s.name}`);
+    console.log(`${''.padEnd(28)} ${s.description}\n`);
+  }
+  process.exit(0);
+}
+if (strategyArg) {
+  try {
+    activeStrategy = getStrategy(strategyArg);
+  } catch (err: any) {
+    console.error(err.message);
+    console.log('Use --list to see available strategies.');
+    process.exit(1);
+  }
+} else {
+  activeStrategy = DefaultStrategy;
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -47,7 +72,7 @@ async function main() {
   console.log('╚═══════════════════════════════════════════════════════════════╝\n');
   console.log(`  Epochs:   ${totalEpochs}`);
   console.log(`  Interval: ${intervalSec > 0 ? intervalSec + 's' : 'none (back-to-back)'}`);
-  console.log(`  Strategy: ${DefaultStrategy.name}`);
+  console.log(`  Strategy: ${activeStrategy.name} [${activeStrategy.id}]`);
   console.log('');
 
   // ── 1. Set up portfolio with virtual balances ─────────────────
@@ -120,7 +145,7 @@ async function main() {
       epochIntervalMs: intervalSec * 1000,
     },
     portfolio: pm,
-    strategy: DefaultStrategy,
+    strategy: activeStrategy,
     executor: simExecutor,
     // Pipe snapshot+plan to the simulation executor before execution
     onPlanReady: setEpochContext,
